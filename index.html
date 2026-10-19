@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chatsong Voice Note Recorder</title>
+    <!-- LameJS voor echte client-side MP3 codering -->
+    <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
     <style>
         :root {
             --bg-color: #0f0f13;
@@ -53,8 +55,8 @@
         <div class="download-section" id="downloadSection">
             <audio id="audioPreview" controls></audio>
             <br><br>
-            <a id="downloadBtn" download="chatsong-voicenote.webm" style="text-decoration: none;">
-                <button style="width: 100%;">📥 Download Voice Note</button>
+            <a id="downloadBtn" download="chatsong-voicenote.mp3" style="text-decoration: none;">
+                <button style="width: 100%;">📥 Download Voice Note (.mp3)</button>
             </a>
         </div>
 
@@ -64,8 +66,11 @@
     </div>
 
     <script>
-        let mediaRecorder;
-        let audioChunks = [];
+        let audioContext;
+        let mediaStream;
+        let processor;
+        let leftChannel = [];
+        let sampleRate = 44100;
         let timerInterval;
         let seconds = 0;
 
@@ -78,59 +83,77 @@
         const bars = document.querySelectorAll('.bar');
 
         recordBtn.onclick = async () => {
-            audioChunks = [];
+            leftChannel = [];
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                
-                // Bepaal het beste ondersteunde audioformaat van de browser
-                let mimeType = 'audio/webm';
-                if (!MediaRecorder.isTypeSupported(mimeType)) {
-                    mimeType = 'audio/ogg';
-                }
+                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                sampleRate = audioContext.sampleRate;
 
-                mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType });
-                
-                mediaRecorder.ondataavailable = event => {
-                    if (event.data && event.data.size > 0) {
-                        audioChunks.push(event.data);
+                const source = audioContext.createMediaStreamSource(mediaStream);
+                processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+                processor.onaudioprocess = (e) => {
+                    const channelData = e.inputBuffer.getChannelData(0);
+                    // Omzetten naar 16-bit PCM samples voor de MP3 encoder
+                    const pcm = new Int16Array(channelData.length);
+                    for (let i = 0; i < channelData.length; i++) {
+                        let s = Math.max(-1, Math.min(1, channelData[i]));
+                        pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
                     }
+                    leftChannel.push(pcm);
                 };
 
-                mediaRecorder.onstop = () => {
-                    const audioBlob = new Blob(audioChunks, { type: mimeType });
-                    const audioUrl = URL.createObjectURL(audioBlob);
-                    
-                    audioPreview.src = audioUrl;
-                    downloadBtn.href = audioUrl;
-                    downloadBtn.download = mimeType.includes('ogg') ? 'chatsong-voicenote.ogg' : 'chatsong-voicenote.webm';
-                    downloadSection.style.display = 'block';
-                    
-                    // Laat de speler direct automatisch afspelen zodat ze zichzelf horen!
-                    audioPreview.play().catch(e => console.log("Auto-play geblokkeerd door browserbeleid", e));
-                };
+                source.connect(processor);
+                processor.connect(audioContext.destination);
 
-                // Verzamel elke 250ms audio data chunks
-                mediaRecorder.start(250);
                 recordBtn.disabled = true;
                 stopBtn.disabled = false;
                 startTimer();
                 animateVisualizer(true);
             } catch (err) {
-                alert('Microphone access denied or not available. Please check your browser permissions.');
+                alert('Microphone access denied or not available.');
                 console.error(err);
             }
         };
 
         stopBtn.onclick = () => {
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                mediaRecorder.stop();
-                mediaRecorder.stream.getTracks().forEach(track => track.stop());
-            }
+            if (processor) processor.disconnect();
+            if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
+            if (audioContext) audioContext.close();
+
+            // Coderen naar echte MP3 met lamejs
+            const mp3Blob = encodeMp3(leftChannel, sampleRate);
+            const audioUrl = URL.createObjectURL(mp3Blob);
+
+            audioPreview.src = audioUrl;
+            downloadBtn.href = audioUrl;
+            downloadSection.style.display = 'block';
+
+            audioPreview.play().catch(e => console.log("Auto-play geblokkeerd", e));
+
             recordBtn.disabled = false;
             stopBtn.disabled = true;
             stopTimer();
             animateVisualizer(false);
         };
+
+        function encodeMp3(chunks, sampleRate) {
+            const mp3encoder = new lamejs.Mp3Encoder(1, sampleRate, 128); // Mono, sampleRate, 128kbps
+            const mp3Data = [];
+
+            for (let i = 0; i < chunks.length; i++) {
+                const mp3buf = mp3encoder.encodeBuffer(chunks[i]);
+                if (mp3buf.length > 0) {
+                    mp3Data.push(mp3buf);
+                }
+            }
+            const mp3buf = mp3encoder.flush();
+            if (mp3buf.length > 0) {
+                mp3Data.push(mp3buf);
+            }
+
+            return new Blob(mp3Data, { type: 'audio/mp3' });
+        }
 
         function startTimer() {
             seconds = 0;
