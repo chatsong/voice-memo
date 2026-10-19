@@ -1,1 +1,153 @@
-# voice-memo
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatsong Voice Note Recorder</title>
+    <style>
+        :root {
+            --bg-color: #0f0f13;
+            --card-bg: #181820;
+            --accent: #7c3aed;
+            --accent-hover: #6d28d9;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --border: rgba(255, 255, 255, 0.1);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 16px; }
+        .recorder-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px; padding: 24px; width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
+        h1 { font-size: 18px; margin-bottom: 6px; font-weight: 600; }
+        p.subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
+        .timer { font-size: 32px; font-weight: 700; letter-spacing: 1px; margin-bottom: 20px; color: var(--accent); }
+        .visualizer { height: 40px; display: flex; align-items: center; justify-content: center; gap: 3px; margin-bottom: 20px; }
+        .bar { width: 4px; height: 8px; background: var(--border); border-radius: 2px; transition: height 0.1s ease; }
+        .controls { display: flex; gap: 12px; justify-content: center; margin-bottom: 20px; }
+        button { background: var(--accent); color: white; border: none; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.2s; display: flex; align-items: center; gap: 8px; justify-content: center; }
+        button:hover { background: var(--accent-hover); }
+        button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text-main); }
+        button.secondary:hover { background: rgba(255,255,255,0.05); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        audio { width: 100%; margin-top: 10px; border-radius: 8px; }
+        .download-section { margin-top: 16px; display: none; }
+        .instructions { font-size: 12px; color: var(--text-muted); margin-top: 16px; line-height: 1.4; border-top: 1px solid var(--border); padding-top: 12px; }
+    </style>
+</head>
+<body>
+    <div class="recorder-card">
+        <h1>🎙️ Studio Voice Note</h1>
+        <p class="subtitle">Neem direct je achtergrondverhaal op</p>
+        
+        <div class="timer" id="timer">00:00</div>
+        
+        <div class="visualizer" id="visualizer">
+            <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+            <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+        </div>
+
+        <div class="controls">
+            <button id="recordBtn">Start Opname</button>
+            <button id="stopBtn" class="secondary" disabled>Stop</button>
+        </div>
+
+        <div class="download-section" id="downloadSection">
+            <audio id="audioPreview" controls></audio>
+            <br><br>
+            <a id="downloadBtn" download="chatsong-voicenote.webm" style="text-decoration: none;">
+                <button style="width: 100%;">📥 Download Voice Note</button>
+            </a>
+        </div>
+
+        <div class="instructions">
+            Na het downloaden sleep je het bestand eenvoudig in je Flarum reactievenster.
+        </div>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let timerInterval;
+        let seconds = 0;
+
+        const recordBtn = document.getElementById('recordBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const timerDisplay = document.getElementById('timer');
+        const downloadSection = document.getElementById('downloadSection');
+        const audioPreview = document.getElementById('audioPreview');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const bars = document.querySelectorAll('.bar');
+
+        recordBtn.onclick = async () => {
+            audioChunks = [];
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    audioPreview.src = audioUrl;
+                    downloadBtn.href = audioUrl;
+                    downloadSection.style.display = 'block';
+                };
+
+                mediaRecorder.start();
+                recordBtn.disabled = true;
+                stopBtn.disabled = false;
+                startTimer();
+                animateVisualizer(true);
+            } catch (err) {
+                alert('Microfoon toegang geweigerd of niet beschikbaar.');
+            }
+        };
+
+        stopBtn.onclick = () => {
+            mediaRecorder.stop();
+            mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            recordBtn.disabled = false;
+            stopBtn.disabled = true;
+            stopTimer();
+            animateVisualizer(false);
+        };
+
+        function startTimer() {
+            seconds = 0;
+            updateTimerDisplay();
+            timerInterval = setInterval(() => {
+                seconds++;
+                updateTimerDisplay();
+            }, 1000);
+        }
+
+        function stopTimer() {
+            clearInterval(timerInterval);
+        }
+
+        function updateTimerDisplay() {
+            const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
+            const secs = String(seconds % 60).padStart(2, '0');
+            timerDisplay.textContent = `${mins}:${secs}`;
+        }
+
+        function animateVisualizer(active) {
+            bars.forEach(bar => {
+                bar.style.height = active ? (Math.random() * 30 + 6) + 'px' : '8px';
+            });
+            if (active) {
+                window.animInterval = setInterval(() => {
+                    bars.forEach(bar => {
+                        bar.style.height = (Math.random() * 30 + 6) + 'px';
+                    });
+                }, 150);
+            } else {
+                clearInterval(window.animInterval);
+                bars.forEach(bar => bar.style.height = '8px');
+            }
+        }
+    </script>
+</body>
+</html>
