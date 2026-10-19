@@ -78,6 +78,9 @@
         let audioChunks = [];
         let timerInterval;
         let seconds = 0;
+        let audioContext;
+        let mediaStreamSource;
+        let destination;
 
         const recordBtn = document.getElementById('recordBtn');
         const stopBtn = document.getElementById('stopBtn');
@@ -116,26 +119,28 @@
             const selectedDeviceId = audioSelect.value;
 
             try {
-                // Dwing Windows/Chrome om de juiste sample-rate en mono-kanaal te gebruiken om Intel SST stiltes te voorkomen
                 const constraints = {
                     audio: {
                         deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
-                        sampleRate: { ideal: 44100 },
-                        channelCount: { ideal: 1 },
-                        echoCancellation: false,
-                        noiseSuppression: false,
-                        autoGainControl: true
+                        echoCancellation: true,
+                        noiseSuppression: true
                     }
                 };
 
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 
-                // Valideer of de stream wel echt audio-tracks bevat
-                if (stream.getAudioTracks().length === 0) {
-                    throw new Error("Geen actieve audio-track gevonden in de stream.");
+                // AudioContext routing om Windows/Intel SST stiltes te omzeilen
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
                 }
 
-                mediaRecorder = new MediaRecorder(stream);
+                mediaStreamSource = audioContext.createMediaStreamSource(stream);
+                destination = audioContext.createMediaStreamDestination();
+                mediaStreamSource.connect(destination);
+
+                // Neem op vanaf de omgeleide destination stream
+                mediaRecorder = new MediaRecorder(destination.stream);
 
                 mediaRecorder.ondataavailable = (event) => {
                     if (event.data && event.data.size > 0) {
@@ -154,6 +159,10 @@
                     audioPreview.play().catch(err => {
                         console.log("Autoplay geblokkeerd:", err);
                     });
+
+                    if (audioContext && audioContext.state !== 'closed') {
+                        audioContext.close();
+                    }
                 };
 
                 mediaRecorder.start(100);
@@ -171,7 +180,9 @@
         stopBtn.onclick = () => {
             if (mediaRecorder && mediaRecorder.state !== 'inactive') {
                 mediaRecorder.stop();
-                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
+            if (mediaStreamSource && mediaStreamSource.mediaStream) {
+                mediaStreamSource.mediaStream.getTracks().forEach(track => track.stop());
             }
             recordBtn.disabled = false;
             stopBtn.disabled = true;
