@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chatsong Voice Note</title>
+    <title>Studio Voice Note</title>
     <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
     <style>
         :root {
@@ -17,29 +17,38 @@
         }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         body { background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 16px; }
-        .recorder-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 20px; padding: 28px; width: 100%; max-width: 400px; box-shadow: 0 15px 35px rgba(0,0,0,0.6); text-align: center; }
+        .recorder-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 20px; padding: 28px; width: 100%; max-width: 380px; box-shadow: 0 15px 35px rgba(0,0,0,0.6); text-align: center; }
+        
+        .mic-header { font-size: 38px; margin-bottom: 8px; display: inline-block; }
         h1 { font-size: 20px; margin-bottom: 6px; font-weight: 600; }
         p.subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 24px; }
+        
         .timer { font-size: 38px; font-weight: 700; letter-spacing: 1px; margin-bottom: 24px; color: var(--accent); }
-        .visualizer { height: 40px; display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 24px; }
+        .visualizer { height: 36px; display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 24px; }
         .bar { width: 4px; height: 8px; background: var(--border); border-radius: 2px; transition: height 0.1s ease; }
-        .controls { display: flex; gap: 12px; justify-content: center; margin-bottom: 20px; }
+        
+        .main-btn-group { display: flex; gap: 10px; }
         button { background: var(--accent); color: white; border: none; padding: 12px 24px; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 8px; justify-content: center; width: 100%; }
         button:hover { background: var(--accent-hover); transform: translateY(-1px); }
         button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text-main); width: auto; padding: 12px 20px; }
         button.secondary:hover { background: rgba(255,255,255,0.05); }
         button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
-        .main-btn-group { display: flex; gap: 10px; }
+        
         audio { width: 100%; margin-top: 12px; border-radius: 8px; }
-        .download-section { margin-top: 20px; display: none; animation: fadeIn 0.3s ease; }
+        .action-section { margin-top: 20px; display: none; animation: fadeIn 0.3s ease; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .btn-success { background: #059669; }
+        .btn-success:hover { background: #047857; }
+        
         .hint { font-size: 12px; color: var(--text-muted); margin-top: 12px; line-height: 1.4; }
     </style>
 </head>
 <body>
     <div class="recorder-card">
-        <h1>🎙️ Spreek je bericht in</h1>
-        <p class="subtitle">Vertel je verhaal voor Chatsong</p>
+        <div class="mic-header">🎙️</div>
+        <h1>Leave a message</h1>
+        <p class="subtitle">Record your story for Chatsong</p>
         
         <div class="timer" id="timer">00:00</div>
         
@@ -49,17 +58,15 @@
         </div>
 
         <div class="main-btn-group">
-            <button id="recordBtn">Start Opname</button>
+            <button id="recordBtn">Start Recording</button>
             <button id="stopBtn" class="secondary" disabled>Stop</button>
         </div>
 
-        <div class="download-section" id="downloadSection">
+        <div class="action-section" id="actionSection">
             <audio id="audioPreview" controls></audio>
             <br><br>
-            <a id="downloadBtn" download="chatsong-voicenote.mp3" style="text-decoration: none;">
-                <button>📥 Sla op en stuur naar Chatsong</button>
-            </a>
-            <div class="hint">Tik op de knop om op te slaan, sleep het bestand daarna zo je bericht in!</div>
+            <button id="copyLinkBtn" class="btn-success">🔗 Copy Audio Link</button>
+            <div class="hint" id="statusHint">Click 'Copy Audio Link' and paste it directly into your reply on Chatsong!</div>
         </div>
     </div>
 
@@ -67,13 +74,15 @@
         let audioContext, mediaStream, processor;
         let leftChannel = [], sampleRate = 44100;
         let timerInterval, seconds = 0;
+        let audioDataUrl = "";
 
         const recordBtn = document.getElementById('recordBtn');
         const stopBtn = document.getElementById('stopBtn');
         const timerDisplay = document.getElementById('timer');
-        const downloadSection = document.getElementById('downloadSection');
+        const actionSection = document.getElementById('actionSection');
         const audioPreview = document.getElementById('audioPreview');
-        const downloadBtn = document.getElementById('downloadBtn');
+        const copyLinkBtn = document.getElementById('copyLinkBtn');
+        const statusHint = document.getElementById('statusHint');
         const bars = document.querySelectorAll('.bar');
 
         recordBtn.onclick = async () => {
@@ -102,10 +111,11 @@
 
                 recordBtn.disabled = true;
                 stopBtn.disabled = false;
+                actionSection.style.display = 'none';
                 startTimer();
                 animateVisualizer(true);
             } catch (err) {
-                alert('Geen microfoon toegang mogelijk.');
+                alert('Microphone access denied or unavailable.');
                 console.error(err);
             }
         };
@@ -115,19 +125,40 @@
             if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
             
             const mp3Blob = encodeMp3(leftChannel, sampleRate);
-            const audioUrl = URL.createObjectURL(mp3Blob);
+            
+            // Converteer naar Data-URL (zodat de audio in een link gevangen zit)
+            const reader = new FileReader();
+            reader.readAsDataURL(mp3Blob);
+            reader.onloadend = () => {
+                audioDataUrl = reader.result;
+                audioPreview.src = audioDataUrl;
+                actionSection.style.display = 'block';
+                audioPreview.play().catch(e => console.log("Autoplay blocked", e));
+            };
 
-            audioPreview.src = audioUrl;
-            downloadBtn.href = audioUrl;
-            downloadSection.style.display = 'block';
-
-            audioPreview.play().catch(e => console.log("Auto-play geblokkeerd", e));
             if (audioContext && audioContext.state !== 'closed') audioContext.close();
 
             recordBtn.disabled = false;
             stopBtn.disabled = true;
             stopTimer();
             animateVisualizer(false);
+        };
+
+        copyLinkBtn.onclick = () => {
+            if (!audioDataUrl) return;
+            
+            // Format als Markdown-link of schone audio-tag voor Flarum
+            const flarumAudioTag = `[audio ${audioDataUrl}]`;
+            
+            navigator.clipboard.writeText(flarumAudioTag).then(() => {
+                copyLinkBtn.textContent = "✅ Link Copied!";
+                statusHint.textContent = "Copied to clipboard! Go back to Chatsong and press Paste (Ctrl+V).";
+                setTimeout(() => {
+                    copyLinkBtn.textContent = "🔗 Copy Audio Link";
+                }, 3000);
+            }).catch(err => {
+                alert("Failed to copy link: " + err);
+            });
         };
 
         function encodeMp3(chunks, sampleRate) {
