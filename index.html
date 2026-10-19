@@ -53,13 +53,13 @@
         <div class="download-section" id="downloadSection">
             <audio id="audioPreview" controls></audio>
             <br><br>
-            <a id="downloadBtn" download="chatsong-voicenote.webm" style="text-decoration: none;">
-                <button style="width: 100%;">📥 Download Voice Note</button>
+            <a id="downloadBtn" download="chatsong-voicenote.mp3" style="text-decoration: none;">
+                <button style="width: 100%;">📥 Download Voice Note (.mp3)</button>
             </a>
         </div>
 
         <div class="instructions">
-            Na het downloaden sleep je het bestand eenvoudig in je Flarum reactievenster.
+            Na het downloaden sleep je het .mp3 bestand eenvoudig in je Flarum reactievenster.
         </div>
     </div>
 
@@ -81,9 +81,16 @@
             audioChunks = [];
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                // Gebruik audio/webm met fallback voor browsers
-                const options = { mimeType: 'audio/webm' };
-                mediaRecorder = new MediaRecorder(stream, options);
+                
+                // Zoek naar de beste MP3/AAC/Audio ondersteuning in de browser
+                let mimeType = 'audio/mp4';
+                if (MediaRecorder.isTypeSupported('audio/mpeg')) {
+                    mimeType = 'audio/mpeg';
+                } else if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                    mimeType = 'audio/webm;codecs=opus';
+                }
+
+                mediaRecorder = new MediaRecorder(stream, { mimeType });
                 
                 mediaRecorder.ondataavailable = event => {
                     if (event.data.size > 0) {
@@ -92,14 +99,13 @@
                 };
 
                 mediaRecorder.onstop = () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
                     const audioUrl = URL.createObjectURL(audioBlob);
                     audioPreview.src = audioUrl;
                     downloadBtn.href = audioUrl;
                     downloadSection.style.display = 'block';
                 };
 
-                // Geef een timeslice van 100ms mee zodat chunks correct worden verzameld
                 mediaRecorder.start(100);
                 recordBtn.disabled = true;
                 stopBtn.disabled = false;
