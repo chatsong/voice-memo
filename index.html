@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="nl">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -36,7 +36,7 @@
 <body>
     <div class="recorder-card">
         <h1>🎙️ Studio Voice Note</h1>
-        <p class="subtitle">Neem direct je achtergrondverhaal op</p>
+        <p class="subtitle">Record your behind-the-track story</p>
         
         <div class="timer" id="timer">00:00</div>
         
@@ -46,31 +46,28 @@
         </div>
 
         <div class="controls">
-            <button id="recordBtn">Start Opname</button>
+            <button id="recordBtn">Start Recording</button>
             <button id="stopBtn" class="secondary" disabled>Stop</button>
         </div>
 
         <div class="download-section" id="downloadSection">
             <audio id="audioPreview" controls></audio>
             <br><br>
-            <a id="downloadBtn" download="chatsong-voicenote.wav" style="text-decoration: none;">
-                <button style="width: 100%;">📥 Download Voice Note (.wav)</button>
+            <a id="downloadBtn" download="chatsong-voicenote.webm" style="text-decoration: none;">
+                <button style="width: 100%;">📥 Download Voice Note</button>
             </a>
         </div>
 
         <div class="instructions">
-            Na het downloaden sleep je het bestand eenvoudig in je Flarum reactievenster.
+            Listen to your preview above, then download and drag it into Chatsong.
         </div>
     </div>
 
     <script>
-        let audioContext;
-        let mediaStream;
-        let recProcessor;
-        let audioBuffers = [];
+        let mediaRecorder;
+        let audioChunks = [];
         let timerInterval;
         let seconds = 0;
-        let sampleRate = 44100;
 
         const recordBtn = document.getElementById('recordBtn');
         const stopBtn = document.getElementById('stopBtn');
@@ -81,108 +78,59 @@
         const bars = document.querySelectorAll('.bar');
 
         recordBtn.onclick = async () => {
-            audioBuffers = [];
+            audioChunks = [];
             try {
-                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                sampleRate = audioContext.sampleRate;
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Bepaal het beste ondersteunde audioformaat van de browser
+                let mimeType = 'audio/webm';
+                if (!MediaRecorder.isTypeSupported(mimeType)) {
+                    mimeType = 'audio/ogg';
+                }
 
-                const input = audioContext.createMediaStreamSource(mediaStream);
-                recProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-
-                recProcessor.onaudioprocess = (e) => {
-                    const channelData = e.inputBuffer.getChannelData(0);
-                    audioBuffers.push(new Float32Array(channelData));
+                mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType });
+                
+                mediaRecorder.ondataavailable = event => {
+                    if (event.data && event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
                 };
 
-                input.connect(recProcessor);
-                recProcessor.connect(audioContext.destination);
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: mimeType });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    
+                    audioPreview.src = audioUrl;
+                    downloadBtn.href = audioUrl;
+                    downloadBtn.download = mimeType.includes('ogg') ? 'chatsong-voicenote.ogg' : 'chatsong-voicenote.webm';
+                    downloadSection.style.display = 'block';
+                    
+                    // Laat de speler direct automatisch afspelen zodat ze zichzelf horen!
+                    audioPreview.play().catch(e => console.log("Auto-play geblokkeerd door browserbeleid", e));
+                };
 
+                // Verzamel elke 250ms audio data chunks
+                mediaRecorder.start(250);
                 recordBtn.disabled = true;
                 stopBtn.disabled = false;
                 startTimer();
                 animateVisualizer(true);
             } catch (err) {
-                alert('Microfoon toegang geweigerd of niet beschikbaar.');
+                alert('Microphone access denied or not available. Please check your browser permissions.');
+                console.error(err);
             }
         };
 
         stopBtn.onclick = () => {
-            if (recProcessor) recProcessor.disconnect();
-            if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
-            if (audioContext) audioContext.close();
-
-            const wavBlob = createWavBlob(audioBuffers, sampleRate);
-            const audioUrl = URL.createObjectURL(wavBlob);
-            
-            audioPreview.src = audioUrl;
-            downloadBtn.href = audioUrl;
-            downloadSection.style.display = 'block';
-
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
             recordBtn.disabled = false;
             stopBtn.disabled = true;
             stopTimer();
             animateVisualizer(false);
         };
-
-        function createWavBlob(buffers, sampleRate) {
-            let totalSamples = 0;
-            for (let i = 0; i < buffers.length; i++) {
-                totalSamples += buffers[i].length;
-            }
-            const buffer = new Float32Array(totalSamples);
-            let offset = 0;
-            for (let i = 0; i < buffers.length; i++) {
-                buffer.set(buffers[i], offset);
-                offset += buffers[i].length;
-            }
-
-            const arrayBuffer = new ArrayBuffer(44 + totalSamples * 2);
-            const view = new DataView(arrayBuffer);
-
-            /* RIFF identifier */
-            writeString(view, 0, 'RIFF');
-            /* RIFF chunk length */
-            view.setUint32(4, 36 + totalSamples * 2, true);
-            /* RIFF type */
-            writeString(view, 8, 'WAVE');
-            /* format chunk identifier */
-            writeString(view, 12, 'fmt ');
-            /* format chunk length */
-            view.setUint32(16, 16, true);
-            /* sample format (PCM) */
-            view.setUint16(20, 1, true);
-            /* channel count (Mono) */
-            view.setUint16(22, 1, true);
-            /* sample rate */
-            view.setUint32(24, sampleRate, true);
-            /* byte rate (sampleRate * 2) */
-            view.setUint32(28, sampleRate * 2, true);
-            /* block align */
-            view.setUint16(32, 2, true);
-            /* bits per sample */
-            view.setUint16(34, 16, true);
-            /* data chunk identifier */
-            writeString(view, 36, 'data');
-            /* data chunk length */
-            view.setUint32(40, totalSamples * 2, true);
-
-            /* PCM samples */
-            let index = 44;
-            for (let i = 0; i < buffer.length; i++) {
-                let s = Math.max(-1, Math.min(1, buffer[i]));
-                view.setInt16(index, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-                index += 2;
-            }
-
-            return new Blob([view], { type: 'audio/wav' });
-        }
-
-        function writeString(view, offset, string) {
-            for (let i = 0; i < string.length; i++) {
-                view.setUint8(offset + i, string.charCodeAt(i));
-            }
-        }
 
         function startTimer() {
             seconds = 0;
