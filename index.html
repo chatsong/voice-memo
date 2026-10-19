@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -66,8 +65,8 @@
         <div class="action-section" id="actionSection">
             <audio id="audioPreview" controls></audio>
             <br><br>
-            <button id="uploadLinkBtn" class="btn-success">🔗 Get Chatsong Link</button>
-            <div class="hint" id="statusHint">Click to upload to Chatsong and copy your MP3 link!</div>
+            <button id="uploadLinkBtn" class="btn-success">🔗 Copy MP3 Link</button>
+            <div class="hint" id="statusHint">Click to get your direct .mp3 link for your reply!</div>
         </div>
     </div>
 
@@ -76,7 +75,7 @@
         let leftChannel = [], sampleRate = 44100;
         let timerInterval, seconds = 0;
         let mp3FileBlob = null;
-        let serverAudioUrl = "";
+        let cleanMp3Url = "";
 
         const recordBtn = document.getElementById('recordBtn');
         const stopBtn = document.getElementById('stopBtn');
@@ -89,9 +88,9 @@
 
         recordBtn.onclick = async () => {
             leftChannel = [];
-            serverAudioUrl = "";
-            uploadLinkBtn.textContent = "🔗 Get Chatsong Link";
-            statusHint.textContent = "Click to upload to Chatsong and copy your MP3 link!";
+            cleanMp3Url = "";
+            uploadLinkBtn.textContent = "🔗 Copy MP3 Link";
+            statusHint.textContent = "Click to get your direct .mp3 link for your reply!";
 
             try {
                 mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -148,8 +147,8 @@
         uploadLinkBtn.onclick = async () => {
             if (!mp3FileBlob) return;
 
-            if (serverAudioUrl) {
-                copyToClipboard(serverAudioUrl);
+            if (cleanMp3Url) {
+                copyToClipboard(cleanMp3Url);
                 return;
             }
 
@@ -158,31 +157,36 @@
 
             try {
                 const formData = new FormData();
-                // fof/upload verwacht 'files[]' als veldnaam
                 formData.append('files[]', mp3FileBlob, 'voice-note.mp3');
 
-                const response = await fetch('https://chatsong.nl/api/attachments', {
+                const response = await fetch('/api/attachments', {
                     method: 'POST',
-                    credentials: 'include', // stuurt de Flarum login-sessie mee
+                    credentials: 'include',
                     body: formData
                 });
 
                 const data = await response.json();
 
-                // Flarum fof/upload geeft een array van geuploade bestanden terug met de URL
+                // Haal de directe .mp3 URL op uit de Flarum upload response
+                let extractedUrl = "";
                 if (data && data.length > 0 && data[0].url) {
-                    serverAudioUrl = data[0].url;
-                    copyToClipboard(serverAudioUrl);
-                } else if (data.data && data.data.attributes && data.data.attributes.url) {
-                    serverAudioUrl = data.data.attributes.url;
-                    copyToClipboard(serverAudioUrl);
+                    extractedUrl = data[0].url;
+                } else if (data.data && data.data[0] && data.data[0].attributes) {
+                    extractedUrl = data.data[0].attributes.url;
+                } else if (data.data && data.data.attributes) {
+                    extractedUrl = data.data.attributes.url;
+                }
+
+                if (extractedUrl) {
+                    cleanMp3Url = extractedUrl;
+                    copyToClipboard(cleanMp3Url);
                 } else {
-                    throw new Error("Upload response invalid");
+                    throw new Error("Invalid response format");
                 }
             } catch (err) {
                 alert("Upload failed. Make sure you are logged in on Chatsong.");
                 uploadLinkBtn.disabled = false;
-                uploadLinkBtn.textContent = "🔗 Get Chatsong Link";
+                uploadLinkBtn.textContent = "🔗 Copy MP3 Link";
                 console.error(err);
             }
         };
@@ -190,10 +194,10 @@
         function copyToClipboard(url) {
             navigator.clipboard.writeText(url).then(() => {
                 uploadLinkBtn.disabled = false;
-                uploadLinkBtn.textContent = "✅ Link Copied!";
-                statusHint.textContent = "Permanent link copied! Paste it in your Chatsong reply.";
+                uploadLinkBtn.textContent = "✅ MP3 Link Copied!";
+                statusHint.textContent = "Copied! Simply paste (Ctrl+V) the link in your reply.";
                 setTimeout(() => {
-                    uploadLinkBtn.textContent = "🔗 Get Chatsong Link";
+                    uploadLinkBtn.textContent = "🔗 Copy MP3 Link";
                 }, 3000);
             });
         }
