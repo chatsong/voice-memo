@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chatsong Voice Note Recorder</title>
+    <!-- LameJS voor echte client-side MP3 codering -->
+    <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
     <style>
         :root {
             --bg-color: #0f0f13;
@@ -18,12 +20,7 @@
         body { background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 16px; }
         .recorder-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px; padding: 24px; width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
         h1 { font-size: 18px; margin-bottom: 6px; font-weight: 600; }
-        p.subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
-        
-        .mic-selector { margin-bottom: 16px; text-align: left; }
-        .mic-selector label { font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px; }
-        .mic-selector select { width: 100%; background: #0f0f13; color: var(--text-main); border: 1px solid var(--border); padding: 8px; border-radius: 6px; font-size: 12px; outline: none; }
-
+        p.subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
         .timer { font-size: 32px; font-weight: 700; letter-spacing: 1px; margin-bottom: 20px; color: var(--accent); }
         .visualizer { height: 40px; display: flex; align-items: center; justify-content: center; gap: 3px; margin-bottom: 20px; }
         .bar { width: 4px; height: 8px; background: var(--border); border-radius: 2px; transition: height 0.1s ease; }
@@ -43,11 +40,6 @@
         <h1>🎙️ Studio Voice Note</h1>
         <p class="subtitle">Record your behind-the-track story</p>
         
-        <div class="mic-selector">
-            <label for="audioSource">Select Microphone:</label>
-            <select id="audioSource"></select>
-        </div>
-
         <div class="timer" id="timer">00:00</div>
         
         <div class="visualizer" id="visualizer">
@@ -63,24 +55,24 @@
         <div class="download-section" id="downloadSection">
             <audio id="audioPreview" controls></audio>
             <br><br>
-            <a id="downloadBtn" download="chatsong-voicenote.webm" style="text-decoration: none;">
-                <button style="width: 100%;">📥 Download Voice Note</button>
+            <a id="downloadBtn" download="chatsong-voicenote.mp3" style="text-decoration: none;">
+                <button style="width: 100%;">📥 Download Voice Note (.mp3)</button>
             </a>
         </div>
 
         <div class="instructions">
-            Listen to your preview above, then download and drag it into Chatsong.
+            After downloading, simply drag and drop the .mp3 file into Chatsong.
         </div>
     </div>
 
     <script>
-        let mediaRecorder;
-        let audioChunks = [];
+        let audioContext;
+        let mediaStream;
+        let processor;
+        let leftChannel = [];
+        let sampleRate = 44100;
         let timerInterval;
         let seconds = 0;
-        let audioContext;
-        let mediaStreamSource;
-        let destination;
 
         const recordBtn = document.getElementById('recordBtn');
         const stopBtn = document.getElementById('stopBtn');
@@ -88,107 +80,88 @@
         const downloadSection = document.getElementById('downloadSection');
         const audioPreview = document.getElementById('audioPreview');
         const downloadBtn = document.getElementById('downloadBtn');
-        const audioSelect = document.getElementById('audioSource');
         const bars = document.querySelectorAll('.bar');
 
-        async function getMicrophones() {
-            try {
-                const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                tempStream.getTracks().forEach(track => track.stop());
-
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                audioSelect.innerHTML = '';
-                
-                devices.forEach(device => {
-                    if (device.kind === 'audioinput') {
-                        const option = document.createElement('option');
-                        option.value = device.deviceId;
-                        option.text = device.label || `Microphone ${audioSelect.length + 1}`;
-                        audioSelect.appendChild(option);
-                    }
-                });
-            } catch (err) {
-                console.error("Error fetching mics:", err);
-            }
-        }
-
-        getMicrophones();
-
         recordBtn.onclick = async () => {
-            audioChunks = [];
-            const selectedDeviceId = audioSelect.value;
-
+            leftChannel = [];
             try {
-                const constraints = {
-                    audio: {
-                        deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
-                        echoCancellation: true,
-                        noiseSuppression: true
-                    }
-                };
-
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                
-                // AudioContext routing om Windows/Intel SST stiltes te omzeilen
+                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 if (audioContext.state === 'suspended') {
                     await audioContext.resume();
                 }
+                sampleRate = audioContext.sampleRate;
 
-                mediaStreamSource = audioContext.createMediaStreamSource(stream);
-                destination = audioContext.createMediaStreamDestination();
-                mediaStreamSource.connect(destination);
+                const source = audioContext.createMediaStreamSource(mediaStream);
+                processor = audioContext.createScriptProcessor(4096, 1, 1);
 
-                // Neem op vanaf de omgeleide destination stream
-                mediaRecorder = new MediaRecorder(destination.stream);
-
-                mediaRecorder.ondataavailable = (event) => {
-                    if (event.data && event.data.size > 0) {
-                        audioChunks.push(event.data);
+                processor.onaudioprocess = (e) => {
+                    const channelData = e.inputBuffer.getChannelData(0);
+                    const pcm = new Int16Array(channelData.length);
+                    for (let i = 0; i < channelData.length; i++) {
+                        let s = Math.max(-1, Math.min(1, channelData[i]));
+                        pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
                     }
+                    leftChannel.push(pcm);
                 };
 
-                mediaRecorder.onstop = () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                    const audioUrl = URL.createObjectURL(audioBlob);
+                source.connect(processor);
+                processor.connect(audioContext.destination);
 
-                    audioPreview.src = audioUrl;
-                    downloadBtn.href = audioUrl;
-                    downloadSection.style.display = 'block';
-
-                    audioPreview.play().catch(err => {
-                        console.log("Autoplay geblokkeerd:", err);
-                    });
-
-                    if (audioContext && audioContext.state !== 'closed') {
-                        audioContext.close();
-                    }
-                };
-
-                mediaRecorder.start(100);
                 recordBtn.disabled = true;
                 stopBtn.disabled = false;
                 startTimer();
                 animateVisualizer(true);
-
             } catch (err) {
-                alert('Microphone error: ' + err.message);
+                alert('Microphone access denied or not available.');
                 console.error(err);
             }
         };
 
         stopBtn.onclick = () => {
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                mediaRecorder.stop();
+            if (processor) processor.disconnect();
+            if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
+            
+            const mp3Blob = encodeMp3(leftChannel, sampleRate);
+            const audioUrl = URL.createObjectURL(mp3Blob);
+
+            audioPreview.src = audioUrl;
+            downloadBtn.href = audioUrl;
+            downloadSection.style.display = 'block';
+
+            audioPreview.play().catch(e => console.log("Auto-play geblokkeerd", e));
+
+            if (audioContext && audioContext.state !== 'closed') {
+                audioContext.close();
             }
-            if (mediaStreamSource && mediaStreamSource.mediaStream) {
-                mediaStreamSource.mediaStream.getTracks().forEach(track => track.stop());
-            }
+
             recordBtn.disabled = false;
             stopBtn.disabled = true;
             stopTimer();
             animateVisualizer(false);
         };
+
+        function encodeMp3(chunks, sampleRate) {
+            if (typeof lamejs === 'undefined') {
+                alert('MP3 Encoder library not loaded!');
+                return new Blob([], { type: 'audio/mp3' });
+            }
+            const mp3encoder = new lamejs.Mp3Encoder(1, sampleRate, 128);
+            const mp3Data = [];
+
+            for (let i = 0; i < chunks.length; i++) {
+                const mp3buf = mp3encoder.encodeBuffer(chunks[i]);
+                if (mp3buf.length > 0) {
+                    mp3Data.push(mp3buf);
+                }
+            }
+            const mp3buf = mp3encoder.flush();
+            if (mp3buf.length > 0) {
+                mp3Data.push(mp3buf);
+            }
+
+            return new Blob(mp3Data, { type: 'audio/mp3' });
+        }
 
         function startTimer() {
             seconds = 0;
