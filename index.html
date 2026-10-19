@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chatsong Voice Note Recorder</title>
-    <!-- LameJS voor echte client-side MP3 codering -->
+    <title>Chatsong Voice Note</title>
     <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
     <style>
         :root {
@@ -18,27 +17,29 @@
         }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         body { background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 16px; }
-        .recorder-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px; padding: 24px; width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
-        h1 { font-size: 18px; margin-bottom: 6px; font-weight: 600; }
-        p.subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
-        .timer { font-size: 32px; font-weight: 700; letter-spacing: 1px; margin-bottom: 20px; color: var(--accent); }
-        .visualizer { height: 40px; display: flex; align-items: center; justify-content: center; gap: 3px; margin-bottom: 20px; }
+        .recorder-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 20px; padding: 28px; width: 100%; max-width: 400px; box-shadow: 0 15px 35px rgba(0,0,0,0.6); text-align: center; }
+        h1 { font-size: 20px; margin-bottom: 6px; font-weight: 600; }
+        p.subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 24px; }
+        .timer { font-size: 38px; font-weight: 700; letter-spacing: 1px; margin-bottom: 24px; color: var(--accent); }
+        .visualizer { height: 40px; display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 24px; }
         .bar { width: 4px; height: 8px; background: var(--border); border-radius: 2px; transition: height 0.1s ease; }
         .controls { display: flex; gap: 12px; justify-content: center; margin-bottom: 20px; }
-        button { background: var(--accent); color: white; border: none; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.2s; display: flex; align-items: center; gap: 8px; justify-content: center; }
-        button:hover { background: var(--accent-hover); }
-        button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text-main); }
+        button { background: var(--accent); color: white; border: none; padding: 12px 24px; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 8px; justify-content: center; width: 100%; }
+        button:hover { background: var(--accent-hover); transform: translateY(-1px); }
+        button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text-main); width: auto; padding: 12px 20px; }
         button.secondary:hover { background: rgba(255,255,255,0.05); }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
-        audio { width: 100%; margin-top: 10px; border-radius: 8px; }
-        .download-section { margin-top: 16px; display: none; }
-        .instructions { font-size: 12px; color: var(--text-muted); margin-top: 16px; line-height: 1.4; border-top: 1px solid var(--border); padding-top: 12px; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+        .main-btn-group { display: flex; gap: 10px; }
+        audio { width: 100%; margin-top: 12px; border-radius: 8px; }
+        .download-section { margin-top: 20px; display: none; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .hint { font-size: 12px; color: var(--text-muted); margin-top: 12px; line-height: 1.4; }
     </style>
 </head>
 <body>
     <div class="recorder-card">
-        <h1>🎙️ Studio Voice Note</h1>
-        <p class="subtitle">Record your behind-the-track story</p>
+        <h1>🎙️ Spreek je bericht in</h1>
+        <p class="subtitle">Vertel je verhaal voor Chatsong</p>
         
         <div class="timer" id="timer">00:00</div>
         
@@ -47,8 +48,8 @@
             <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
         </div>
 
-        <div class="controls">
-            <button id="recordBtn">Start Recording</button>
+        <div class="main-btn-group">
+            <button id="recordBtn">Start Opname</button>
             <button id="stopBtn" class="secondary" disabled>Stop</button>
         </div>
 
@@ -56,23 +57,16 @@
             <audio id="audioPreview" controls></audio>
             <br><br>
             <a id="downloadBtn" download="chatsong-voicenote.mp3" style="text-decoration: none;">
-                <button style="width: 100%;">📥 Download Voice Note (.mp3)</button>
+                <button>📥 Sla op en stuur naar Chatsong</button>
             </a>
-        </div>
-
-        <div class="instructions">
-            After downloading, simply drag and drop the .mp3 file into Chatsong.
+            <div class="hint">Tik op de knop om op te slaan, sleep het bestand daarna zo je bericht in!</div>
         </div>
     </div>
 
     <script>
-        let audioContext;
-        let mediaStream;
-        let processor;
-        let leftChannel = [];
-        let sampleRate = 44100;
-        let timerInterval;
-        let seconds = 0;
+        let audioContext, mediaStream, processor;
+        let leftChannel = [], sampleRate = 44100;
+        let timerInterval, seconds = 0;
 
         const recordBtn = document.getElementById('recordBtn');
         const stopBtn = document.getElementById('stopBtn');
@@ -87,9 +81,7 @@
             try {
                 mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                if (audioContext.state === 'suspended') {
-                    await audioContext.resume();
-                }
+                if (audioContext.state === 'suspended') await audioContext.resume();
                 sampleRate = audioContext.sampleRate;
 
                 const source = audioContext.createMediaStreamSource(mediaStream);
@@ -113,7 +105,7 @@
                 startTimer();
                 animateVisualizer(true);
             } catch (err) {
-                alert('Microphone access denied or not available.');
+                alert('Geen microfoon toegang mogelijk.');
                 console.error(err);
             }
         };
@@ -130,10 +122,7 @@
             downloadSection.style.display = 'block';
 
             audioPreview.play().catch(e => console.log("Auto-play geblokkeerd", e));
-
-            if (audioContext && audioContext.state !== 'closed') {
-                audioContext.close();
-            }
+            if (audioContext && audioContext.state !== 'closed') audioContext.close();
 
             recordBtn.disabled = false;
             stopBtn.disabled = true;
@@ -142,39 +131,24 @@
         };
 
         function encodeMp3(chunks, sampleRate) {
-            if (typeof lamejs === 'undefined') {
-                alert('MP3 Encoder library not loaded!');
-                return new Blob([], { type: 'audio/mp3' });
-            }
             const mp3encoder = new lamejs.Mp3Encoder(1, sampleRate, 128);
             const mp3Data = [];
-
             for (let i = 0; i < chunks.length; i++) {
                 const mp3buf = mp3encoder.encodeBuffer(chunks[i]);
-                if (mp3buf.length > 0) {
-                    mp3Data.push(mp3buf);
-                }
+                if (mp3buf.length > 0) mp3Data.push(mp3buf);
             }
             const mp3buf = mp3encoder.flush();
-            if (mp3buf.length > 0) {
-                mp3Data.push(mp3buf);
-            }
-
+            if (mp3buf.length > 0) mp3Data.push(mp3buf);
             return new Blob(mp3Data, { type: 'audio/mp3' });
         }
 
         function startTimer() {
             seconds = 0;
             updateTimerDisplay();
-            timerInterval = setInterval(() => {
-                seconds++;
-                updateTimerDisplay();
-            }, 1000);
+            timerInterval = setInterval(() => { seconds++; updateTimerDisplay(); }, 1000);
         }
 
-        function stopTimer() {
-            clearInterval(timerInterval);
-        }
+        function stopTimer() { clearInterval(timerInterval); }
 
         function updateTimerDisplay() {
             const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
@@ -185,9 +159,7 @@
         function animateVisualizer(active) {
             if (active) {
                 window.animInterval = setInterval(() => {
-                    bars.forEach(bar => {
-                        bar.style.height = (Math.random() * 30 + 6) + 'px';
-                    });
+                    bars.forEach(bar => bar.style.height = (Math.random() * 30 + 6) + 'px');
                 }, 150);
             } else {
                 clearInterval(window.animInterval);
