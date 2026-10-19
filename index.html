@@ -18,7 +18,12 @@
         body { background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 16px; }
         .recorder-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px; padding: 24px; width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
         h1 { font-size: 18px; margin-bottom: 6px; font-weight: 600; }
-        p.subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
+        p.subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
+        
+        .mic-selector { margin-bottom: 16px; text-align: left; }
+        .mic-selector label { font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px; }
+        .mic-selector select { width: 100%; background: #0f0f13; color: var(--text-main); border: 1px solid var(--border); padding: 8px; border-radius: 6px; font-size: 12px; outline: none; }
+
         .timer { font-size: 32px; font-weight: 700; letter-spacing: 1px; margin-bottom: 20px; color: var(--accent); }
         .visualizer { height: 40px; display: flex; align-items: center; justify-content: center; gap: 3px; margin-bottom: 20px; }
         .bar { width: 4px; height: 8px; background: var(--border); border-radius: 2px; transition: height 0.1s ease; }
@@ -38,6 +43,11 @@
         <h1>🎙️ Studio Voice Note</h1>
         <p class="subtitle">Record your behind-the-track story</p>
         
+        <div class="mic-selector">
+            <label for="audioSource">Select Microphone:</label>
+            <select id="audioSource"></select>
+        </div>
+
         <div class="timer" id="timer">00:00</div>
         
         <div class="visualizer" id="visualizer">
@@ -75,19 +85,55 @@
         const downloadSection = document.getElementById('downloadSection');
         const audioPreview = document.getElementById('audioPreview');
         const downloadBtn = document.getElementById('downloadBtn');
+        const audioSelect = document.getElementById('audioSource');
         const bars = document.querySelectorAll('.bar');
+
+        async function getMicrophones() {
+            try {
+                const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                tempStream.getTracks().forEach(track => track.stop());
+
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                audioSelect.innerHTML = '';
+                
+                devices.forEach(device => {
+                    if (device.kind === 'audioinput') {
+                        const option = document.createElement('option');
+                        option.value = device.deviceId;
+                        option.text = device.label || `Microphone ${audioSelect.length + 1}`;
+                        audioSelect.appendChild(option);
+                    }
+                });
+            } catch (err) {
+                console.error("Error fetching mics:", err);
+            }
+        }
+
+        getMicrophones();
 
         recordBtn.onclick = async () => {
             audioChunks = [];
+            const selectedDeviceId = audioSelect.value;
+
             try {
-                // Vraag om pure audio zonder automatische filters die op Windows laptops falen
-                const stream = await navigator.mediaDevices.getUserMedia({ 
+                // Dwing Windows/Chrome om de juiste sample-rate en mono-kanaal te gebruiken om Intel SST stiltes te voorkomen
+                const constraints = {
                     audio: {
+                        deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
+                        sampleRate: { ideal: 44100 },
+                        channelCount: { ideal: 1 },
                         echoCancellation: false,
                         noiseSuppression: false,
                         autoGainControl: true
-                    } 
-                });
+                    }
+                };
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                // Valideer of de stream wel echt audio-tracks bevat
+                if (stream.getAudioTracks().length === 0) {
+                    throw new Error("Geen actieve audio-track gevonden in de stream.");
+                }
 
                 mediaRecorder = new MediaRecorder(stream);
 
@@ -105,7 +151,6 @@
                     downloadBtn.href = audioUrl;
                     downloadSection.style.display = 'block';
 
-                    // Speel direct af zodat je jezelf hoort
                     audioPreview.play().catch(err => {
                         console.log("Autoplay geblokkeerd:", err);
                     });
