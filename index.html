@@ -81,10 +81,14 @@
             audioChunks = [];
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
+                // Gebruik audio/webm met fallback voor browsers
+                const options = { mimeType: 'audio/webm' };
+                mediaRecorder = new MediaRecorder(stream, options);
                 
                 mediaRecorder.ondataavailable = event => {
-                    audioChunks.push(event.data);
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
                 };
 
                 mediaRecorder.onstop = () => {
@@ -95,7 +99,8 @@
                     downloadSection.style.display = 'block';
                 };
 
-                mediaRecorder.start();
+                // Geef een timeslice van 100ms mee zodat chunks correct worden verzameld
+                mediaRecorder.start(100);
                 recordBtn.disabled = true;
                 stopBtn.disabled = false;
                 startTimer();
@@ -134,9 +139,6 @@
         }
 
         function animateVisualizer(active) {
-            bars.forEach(bar => {
-                bar.style.height = active ? (Math.random() * 30 + 6) + 'px' : '8px';
-            });
             if (active) {
                 window.animInterval = setInterval(() => {
                     bars.forEach(bar => {
