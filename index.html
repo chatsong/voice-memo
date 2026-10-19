@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Studio Voice Note</title>
+    <title>Chatsong Voice Recorder</title>
     <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
     <style>
         :root {
@@ -17,81 +17,52 @@
         }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         body { background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 16px; }
-        .recorder-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 20px; padding: 28px; width: 100%; max-width: 380px; box-shadow: 0 15px 35px rgba(0,0,0,0.6); text-align: center; }
+        .recorder-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 20px; padding: 32px; width: 100%; max-width: 360px; box-shadow: 0 15px 35px rgba(0,0,0,0.6); text-align: center; }
         
-        .mic-header { font-size: 38px; margin-bottom: 8px; display: inline-block; }
+        .mic-icon { font-size: 48px; margin-bottom: 12px; }
         h1 { font-size: 20px; margin-bottom: 6px; font-weight: 600; }
         p.subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 24px; }
         
-        .timer { font-size: 38px; font-weight: 700; letter-spacing: 1px; margin-bottom: 24px; color: var(--accent); }
-        .visualizer { height: 36px; display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 24px; }
-        .bar { width: 4px; height: 8px; background: var(--border); border-radius: 2px; transition: height 0.1s ease; }
+        .timer { font-size: 42px; font-weight: 700; letter-spacing: 1px; margin-bottom: 24px; color: var(--accent); }
         
-        .main-btn-group { display: flex; gap: 10px; }
-        button { background: var(--accent); color: white; border: none; padding: 12px 24px; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 8px; justify-content: center; width: 100%; }
+        .controls { display: flex; flex-direction: column; gap: 12px; }
+        button { background: var(--accent); color: white; border: none; padding: 14px 24px; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; }
         button:hover { background: var(--accent-hover); transform: translateY(-1px); }
-        button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text-main); width: auto; padding: 12px 20px; }
-        button.secondary:hover { background: rgba(255,255,255,0.05); }
-        button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+        button.stop-btn { background: #dc2626; }
+        button.stop-btn:hover { background: #b91c1c; }
+        button:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
         
-        audio { width: 100%; margin-top: 12px; border-radius: 8px; }
-        .action-section { margin-top: 20px; display: none; animation: fadeIn 0.3s ease; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        
-        .btn-success { background: #059669; }
-        .btn-success:hover { background: #047857; }
-        
-        .hint { font-size: 12px; color: var(--text-muted); margin-top: 12px; line-height: 1.4; }
+        .hint { font-size: 12px; color: var(--text-muted); margin-top: 16px; line-height: 1.4; }
     </style>
 </head>
 <body>
     <div class="recorder-card">
-        <div class="mic-header">🎙️</div>
+        <div class="mic-icon">🎙️</div>
         <h1>Leave a message</h1>
-        <p class="subtitle">Record your story for Chatsong</p>
+        <p class="subtitle">Record your voice note</p>
         
         <div class="timer" id="timer">00:00</div>
-        
-        <div class="visualizer" id="visualizer">
-            <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
-            <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+
+        <div class="controls">
+            <button id="recordBtn">🔴 Start Recording</button>
+            <button id="stopBtn" class="stop-btn" style="display: none;" disabled>⏹️ Stop & Download MP3</button>
         </div>
 
-        <div class="main-btn-group">
-            <button id="recordBtn">Start Recording</button>
-            <button id="stopBtn" class="secondary" disabled>Stop</button>
-        </div>
-
-        <div class="action-section" id="actionSection">
-            <audio id="audioPreview" controls></audio>
-            <br><br>
-            <button id="uploadLinkBtn" class="btn-success">🔗 Copy MP3 Link</button>
-            <div class="hint" id="statusHint">Click to get your direct .mp3 link for your reply!</div>
-        </div>
+        <div class="hint" id="statusHint">Click 'Start Recording' to begin speaking.</div>
     </div>
 
     <script>
         let audioContext, mediaStream, processor;
         let leftChannel = [], sampleRate = 44100;
         let timerInterval, seconds = 0;
-        let mp3FileBlob = null;
-        let cleanMp3Url = "";
 
         const recordBtn = document.getElementById('recordBtn');
         const stopBtn = document.getElementById('stopBtn');
         const timerDisplay = document.getElementById('timer');
-        const actionSection = document.getElementById('actionSection');
-        const audioPreview = document.getElementById('audioPreview');
-        const uploadLinkBtn = document.getElementById('uploadLinkBtn');
         const statusHint = document.getElementById('statusHint');
-        const bars = document.querySelectorAll('.bar');
 
         recordBtn.onclick = async () => {
             leftChannel = [];
-            cleanMp3Url = "";
-            uploadLinkBtn.textContent = "🔗 Copy MP3 Link";
-            statusHint.textContent = "Click to get your direct .mp3 link for your reply!";
-
             try {
                 mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -114,11 +85,12 @@
                 source.connect(processor);
                 processor.connect(audioContext.destination);
 
-                recordBtn.disabled = true;
+                recordBtn.style.display = 'none';
+                stopBtn.style.display = 'flex';
                 stopBtn.disabled = false;
-                actionSection.style.display = 'none';
+                
                 startTimer();
-                animateVisualizer(true);
+                statusHint.textContent = "Recording in progress... Click stop when finished.";
             } catch (err) {
                 alert('Microphone access denied or unavailable.');
                 console.error(err);
@@ -129,78 +101,26 @@
             if (processor) processor.disconnect();
             if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
             
-            mp3FileBlob = encodeMp3(leftChannel, sampleRate);
-            const localPreviewUrl = URL.createObjectURL(mp3FileBlob);
+            const mp3Blob = encodeMp3(leftChannel, sampleRate);
+            const url = URL.createObjectURL(mp3Blob);
 
-            audioPreview.src = localPreviewUrl;
-            actionSection.style.display = 'block';
-            audioPreview.play().catch(e => console.log("Autoplay blocked", e));
+            // Automatische download starten
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `chatsong-voicenote-${Date.now()}.mp3`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
 
             if (audioContext && audioContext.state !== 'closed') audioContext.close();
 
-            recordBtn.disabled = false;
-            stopBtn.disabled = true;
+            stopBtn.style.display = 'none';
+            recordBtn.style.display = 'flex';
             stopTimer();
-            animateVisualizer(false);
+
+            statusHint.textContent = "✅ MP3 downloaded! You can now upload it to Chatsong.";
         };
-
-        uploadLinkBtn.onclick = async () => {
-            if (!mp3FileBlob) return;
-
-            if (cleanMp3Url) {
-                copyToClipboard(cleanMp3Url);
-                return;
-            }
-
-            uploadLinkBtn.disabled = true;
-            uploadLinkBtn.textContent = "⏳ Uploading to Chatsong...";
-
-            try {
-                const formData = new FormData();
-                formData.append('files[]', mp3FileBlob, 'voice-note.mp3');
-
-                const response = await fetch('/api/attachments', {
-                    method: 'POST',
-                    credentials: 'include',
-                    body: formData
-                });
-
-                const data = await response.json();
-
-                // Haal de directe .mp3 URL op uit de Flarum upload response
-                let extractedUrl = "";
-                if (data && data.length > 0 && data[0].url) {
-                    extractedUrl = data[0].url;
-                } else if (data.data && data.data[0] && data.data[0].attributes) {
-                    extractedUrl = data.data[0].attributes.url;
-                } else if (data.data && data.data.attributes) {
-                    extractedUrl = data.data.attributes.url;
-                }
-
-                if (extractedUrl) {
-                    cleanMp3Url = extractedUrl;
-                    copyToClipboard(cleanMp3Url);
-                } else {
-                    throw new Error("Invalid response format");
-                }
-            } catch (err) {
-                alert("Upload failed. Make sure you are logged in on Chatsong.");
-                uploadLinkBtn.disabled = false;
-                uploadLinkBtn.textContent = "🔗 Copy MP3 Link";
-                console.error(err);
-            }
-        };
-
-        function copyToClipboard(url) {
-            navigator.clipboard.writeText(url).then(() => {
-                uploadLinkBtn.disabled = false;
-                uploadLinkBtn.textContent = "✅ MP3 Link Copied!";
-                statusHint.textContent = "Copied! Simply paste (Ctrl+V) the link in your reply.";
-                setTimeout(() => {
-                    uploadLinkBtn.textContent = "🔗 Copy MP3 Link";
-                }, 3000);
-            });
-        }
 
         function encodeMp3(chunks, sampleRate) {
             const mp3encoder = new lamejs.Mp3Encoder(1, sampleRate, 128);
@@ -226,17 +146,6 @@
             const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
             const secs = String(seconds % 60).padStart(2, '0');
             timerDisplay.textContent = `${mins}:${secs}`;
-        }
-
-        function animateVisualizer(active) {
-            if (active) {
-                window.animInterval = setInterval(() => {
-                    bars.forEach(bar => bar.style.height = (Math.random() * 30 + 6) + 'px');
-                }, 150);
-            } else {
-                clearInterval(window.animInterval);
-                bars.forEach(bar => bar.style.height = '8px');
-            }
         }
     </script>
 </body>
